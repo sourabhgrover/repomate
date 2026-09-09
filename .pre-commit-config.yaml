@@ -1,0 +1,8 @@
+# Local mirror of the PostToolUse black-formatting hook described in CLAUDE.md,
+# so formatting is enforced the same way outside the Claude Code harness.
+repos:
+  - repo: https://github.com/psf/black
+    rev: 24.4.2
+    hooks:
+      - id: black
+        language_version: python3.11
