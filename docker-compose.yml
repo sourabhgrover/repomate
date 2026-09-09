@@ -1,0 +1,19 @@
+# Local dev only. MongoDB itself is not run here — the app always talks to the
+# hosted Atlas free M0 cluster (see CLAUDE.md: avoids vector-store data loss on
+# redeploy with ephemeral disks), configured via MONGODB_URI in .env.
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend

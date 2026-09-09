@@ -1,0 +1,4 @@
+# 10-15 questions covering architecture, API usage, and debugging-style queries
+# against 1-2 known public repos, plus at least one insufficient-context refusal
+# case (CLAUDE.md evaluation requirements). Populated during eval design (Lead).
+questions: []
