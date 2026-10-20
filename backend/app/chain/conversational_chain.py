@@ -7,10 +7,17 @@ returns one ChatAnswer synchronously — no generator/streaming return type,
 matching "No SSE streaming in MVP".
 """
 
+# pyright: reportMissingImports=false
 from dataclasses import dataclass
 from typing import Any
 
-from langchain_community.chains import ConversationalRetrievalChain
+try:
+  from langchain_classic.chains import (  # type: ignore
+      ConversationalRetrievalChain,
+  )
+except ImportError:
+  from langchain.chains import ConversationalRetrievalChain  # type: ignore
+
 from langchain_core.retrievers import BaseRetriever
 
 from backend.app.chain.prompts import CONDENSE_QUESTION_PROMPT, QA_PROMPT
@@ -81,7 +88,7 @@ class RepoConversationalChain:
       meta = doc.metadata
       content_hash = meta.get("content_hash")
 
-      # Deduplicate citations by content_hash or file_path + line_start
+      # Deduplicate citations by content_hash or (file_path, line_start)
       chunk_key = content_hash or (
           meta.get("file_path"),
           meta.get("line_start"),
