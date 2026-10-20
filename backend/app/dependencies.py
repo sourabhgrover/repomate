@@ -29,25 +29,49 @@ from backend.app.storage.chunk_repository import ChunkRepository
 from backend.app.storage.job_repository import JobRepository
 from backend.app.storage.mongo_client import MongoDBClient
 
-# Fallback LLM loader (supports LLM_API_KEY / GROQ_API_KEY per .env)
-try:
-  from langchain_groq import ChatGroq
 
-  def _create_llm():
-    api_key = os.getenv("LLM_API_KEY") or os.getenv("GROQ_API_KEY") or ""
-    model_name = os.getenv("LLM_MODEL_NAME", "llama-3.3-70b-versatile")
+# Adaptive LLM loader: supports Gemini (primary) and Groq (fallback)
+def _create_llm():
+  provider = os.getenv("LLM_PROVIDER", "gemini").lower()
+  model_name = os.getenv("LLM_MODEL_NAME", "gemini-1.5-flash")
+  api_key = (
+      os.getenv("LLM_API_KEY")
+      or os.getenv("GOOGLE_API_KEY")
+      or os.getenv("GROQ_API_KEY")
+      or ""
+  )
+
+  # 1. Primary: Google Gemini
+  if provider == "gemini":
+    try:
+      from langchain_google_genai import ChatGoogleGenerativeAI
+
+      return ChatGoogleGenerativeAI(
+          model=model_name,
+          temperature=0.1,
+          google_api_key=api_key or None,
+      )
+    except ImportError:
+      pass
+
+  # 2. Fallback: Groq (Llama / Mixtral)
+  try:
+    from langchain_groq import ChatGroq
+
     return ChatGroq(
         model_name=model_name,
         temperature=0.1,
         groq_api_key=api_key or None,
     )
+  except ImportError:
+    pass
 
-except ImportError:
+  # 3. Offline Test Mock
+  from langchain_core.language_models.fake import FakeListLLM
 
-  def _create_llm():
-    from langchain_core.language_models.fake import FakeListLLM
-
-    return FakeListLLM(responses=["[test/app.py:L1-L10] Mocked response."])
+  return FakeListLLM(
+      responses=["[test/app.py:L1-L10] Mocked response for tests."]
+  )
 
 
 @lru_cache(maxsize=1)
