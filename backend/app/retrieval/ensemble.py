@@ -4,7 +4,17 @@ This is the literal hybrid-search mechanism named in CLAUDE.md
 ("RAG framework: LangChain (EnsembleRetriever + ConversationalRetrievalChain)").
 """
 
-from langchain_community.retrievers import EnsembleRetriever
+# pyright: reportMissingImports=false
+try:
+  from langchain_classic.retrievers import EnsembleRetriever  # type: ignore
+except ImportError:
+  try:
+    from langchain.retrievers import EnsembleRetriever  # type: ignore
+  except ImportError:
+    from langchain_community.retrievers import (  # type: ignore
+        EnsembleRetriever,
+    )
+
 from langchain_core.retrievers import BaseRetriever
 
 
@@ -21,13 +31,12 @@ def build_ensemble_retriever(
   Args:
       vector_retriever: AtlasVectorRetriever (semantic/dense leg).
       keyword_retriever: AtlasKeywordRetriever (Lucene BM25/sparse leg).
-      weights: Relative importance of (vector, keyword). Default is equal (0.5, 0.5).
-               Increase vector weight for conceptual queries;
-               increase keyword weight for exact identifier lookups.
+      weights: Relative importance of (vector, keyword). Default is equal (0.5,
+        0.5).
 
   Returns:
       EnsembleRetriever: A single unified retriever ready to plug into
-                         ConversationalRetrievalChain.
+      ConversationalRetrievalChain.
   """
   return EnsembleRetriever(
       retrievers=[vector_retriever, keyword_retriever],
