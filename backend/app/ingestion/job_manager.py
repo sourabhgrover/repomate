@@ -55,8 +55,10 @@ class JobManager:
         created_at=now,
         updated_at=now,
     )
-    # Flexible persistence call (supports .save or .create on JobRepository)
-    if hasattr(self.job_repository, "save"):
+    # Direct call to JobRepository.insert()
+    if hasattr(self.job_repository, "insert"):
+      self.job_repository.insert(job)
+    elif hasattr(self.job_repository, "save"):
       self.job_repository.save(job)
     elif hasattr(self.job_repository, "create"):
       self.job_repository.create(job)
