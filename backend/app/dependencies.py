@@ -29,14 +29,15 @@ from backend.app.storage.chunk_repository import ChunkRepository
 from backend.app.storage.job_repository import JobRepository
 from backend.app.storage.mongo_client import MongoDBClient
 
-# Fallback LLM loader (Groq for free Llama 3.3 per CLAUDE.md)
+# Fallback LLM loader (supports LLM_API_KEY / GROQ_API_KEY per .env)
 try:
   from langchain_groq import ChatGroq
 
   def _create_llm():
-    api_key = os.getenv("GROQ_API_KEY", "")
+    api_key = os.getenv("LLM_API_KEY") or os.getenv("GROQ_API_KEY") or ""
+    model_name = os.getenv("LLM_MODEL_NAME", "llama-3.3-70b-versatile")
     return ChatGroq(
-        model_name="llama-3.3-70b-versatile",
+        model_name=model_name,
         temperature=0.1,
         groq_api_key=api_key or None,
     )
@@ -81,10 +82,11 @@ def get_job_manager() -> JobManager:
 @lru_cache(maxsize=1)
 def get_ingestion_pipeline() -> IngestionPipeline:
   github_token = os.getenv("GITHUB_TOKEN")
+  max_files = int(os.getenv("MAX_REPO_FILES", "150"))
   return IngestionPipeline(
       github_client=GitHubClient(github_token=github_token),
       sanitizer=Sanitizer(),
-      file_walker=FileWalker(max_files=150),
+      file_walker=FileWalker(max_files=max_files),
       chunker_registry=ChunkerRegistry(python_chunker=PythonChunker()),
       embedder=get_embedder(),
       chunk_repository=get_chunk_repository(),
