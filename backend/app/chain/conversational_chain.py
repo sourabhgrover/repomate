@@ -9,7 +9,7 @@ matching "No SSE streaming in MVP".
 
 from dataclasses import dataclass
 
-from langchain.chains import ConversationalRetrievalChain
+from langchain_community.chains import ConversationalRetrievalChain
 from langchain_core.retrievers import BaseRetriever
 
 
