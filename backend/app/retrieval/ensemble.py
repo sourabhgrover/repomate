@@ -4,7 +4,7 @@ This is the literal hybrid-search mechanism named in CLAUDE.md
 ("RAG framework: LangChain (EnsembleRetriever + ConversationalRetrievalChain)").
 """
 
-from langchain.retrievers import EnsembleRetriever
+from langchain_community.retrievers import EnsembleRetriever
 from langchain_core.retrievers import BaseRetriever
 
 
