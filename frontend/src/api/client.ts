@@ -2,6 +2,8 @@
 // /chat is a single request/response call — no EventSource/SSE handling here,
 // matching the backend's synchronous-only /chat contract.
 
+const API_BASE_URL = (import.meta as any).env.VITE_API_URL || "http://127.0.0.1:8000";
+
 export interface IndexRequest {
   owner: string;
   name: string;
@@ -40,17 +42,63 @@ export interface ChatResponse {
 }
 
 export async function startIndex(request: IndexRequest): Promise<IndexResponse> {
-  throw new Error("not implemented");
+  const response = await fetch(`${API_BASE_URL}/index`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      owner: request.owner,
+      name: request.name,
+      ref: request.ref || "main",
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to start indexing: ${errorText}`);
+  }
+
+  return response.json();
 }
 
 export async function getStatus(jobId: string): Promise<StatusResponse> {
-  throw new Error("not implemented");
+  const response = await fetch(`${API_BASE_URL}/status?job_id=${encodeURIComponent(jobId)}`, {
+    method: "GET",
+    headers: {
+      "Accept": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Failed to get status: ${errorText}`);
+  }
+
+  return response.json();
 }
 
 export async function sendChat(
   repoId: string,
   question: string,
-  chatHistory: ChatMessage[]
+  chatHistory: ChatMessage[] = []
 ): Promise<ChatResponse> {
-  throw new Error("not implemented");
+  const response = await fetch(`${API_BASE_URL}/chat`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      repo_id: repoId,
+      question: question,
+      chat_history: chatHistory,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => null);
+    throw new Error(errorData?.detail || `Chat request failed with status ${response.status}`);
+  }
+
+  return response.json();
 }
