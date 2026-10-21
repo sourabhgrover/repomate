@@ -71,7 +71,7 @@ class IngestionPipeline:
         logger.info(f"Sanitizing repository tree at {cloned_path}...")
         sanitization_results = self.sanitizer.sanitize_tree(cloned_path)
 
-        # 3. WALK & ENFORCE CAP (Check 100-150 demo cap, detect languages)
+        # 3. WALK & ENFORCE CAP (Check demo cap, detect languages)
         logger.info("Walking sanitized files and detecting languages...")
         walked_files = self.file_walker.walk(cloned_path, sanitization_results)
 
@@ -80,17 +80,18 @@ class IngestionPipeline:
         if self.chunker_registry is not None:
           logger.info(f"Chunking {len(walked_files)} walked files...")
           for file in walked_files:
-            if hasattr(self.chunker_registry, "chunk_file"):
-              chunks = self.chunker_registry.chunk_file(
-                  file, repo_id=repo_ref.repo_id
-              )
-            elif hasattr(self.chunker_registry, "chunk"):
+            try:
               chunks = self.chunker_registry.chunk(
-                  file, repo_id=repo_ref.repo_id
+                  repo_id=repo_ref.repo_id,
+                  file_path=file.relative_path,
+                  language=file.language,
+                  source_code=file.content,
               )
-            else:
-              chunks = []
-            all_chunks.extend(chunks)
+              all_chunks.extend(chunks)
+            except Exception as e:
+              logger.warning(
+                  f"Skipping chunking for {file.relative_path}: {e}"
+              )
 
         # Update progress so GET /status reflects file and chunk counts
         self.job_manager.mark_progress(
@@ -99,19 +100,18 @@ class IngestionPipeline:
             chunks_created=len(all_chunks),
         )
 
-        # 5. EMBED (Sentence-transformers bge-small-en-v1.5 - Week 2)
-        if self.embedder is not None and all_chunks:
+        # 5. EMBED & 6. PERSIST (Local bge-small + MongoDB Atlas)
+        if all_chunks and self.embedder is not None:
           logger.info(f"Embedding {len(all_chunks)} chunks locally...")
-          if hasattr(self.embedder, "embed_chunks"):
-            all_chunks = self.embedder.embed_chunks(all_chunks)
+          texts = [chunk.content for chunk in all_chunks]
+          embeddings = self.embedder.embed_texts(texts)
 
-        # 6. PERSIST (MongoDB Atlas bulk insert - Week 2)
-        if self.chunk_repository is not None and all_chunks:
-          logger.info("Persisting chunks to MongoDB Atlas...")
-          if hasattr(self.chunk_repository, "save_chunks"):
-            self.chunk_repository.save_chunks(all_chunks)
-          elif hasattr(self.chunk_repository, "save"):
-            self.chunk_repository.save(all_chunks)
+          if self.chunk_repository is not None:
+            logger.info("Persisting chunks and embeddings to MongoDB Atlas...")
+            if hasattr(self.chunk_repository, "upsert_chunks"):
+              self.chunk_repository.upsert_chunks(all_chunks, embeddings)
+            elif hasattr(self.chunk_repository, "save_chunks"):
+              self.chunk_repository.save_chunks(all_chunks)
 
         # 7. COMPLETED
         self.job_manager.mark_completed(job_id)
