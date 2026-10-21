@@ -30,18 +30,31 @@ from backend.app.storage.job_repository import JobRepository
 from backend.app.storage.mongo_client import MongoDBClient
 
 
-# Adaptive LLM loader: supports Gemini (primary) and Groq (fallback)
+# LLM loader: Groq primary (using openai/gpt-oss-20b) with Gemini fallback
 def _create_llm():
-  provider = os.getenv("LLM_PROVIDER", "gemini").lower()
-  model_name = os.getenv("LLM_MODEL_NAME", "gemini-1.5-flash")
+  provider = os.getenv("LLM_PROVIDER", "groq").lower()
+  model_name = os.getenv("LLM_MODEL_NAME", "openai/gpt-oss-20b")
   api_key = (
       os.getenv("LLM_API_KEY")
-      or os.getenv("GOOGLE_API_KEY")
       or os.getenv("GROQ_API_KEY")
+      or os.getenv("GOOGLE_API_KEY")
       or ""
   )
 
-  # 1. Primary: Google Gemini
+  # 1. Primary: Groq (openai/gpt-oss-20b or llama models)
+  if provider == "groq":
+    try:
+      from langchain_groq import ChatGroq
+
+      return ChatGroq(
+          model_name=model_name,
+          temperature=0.1,
+          groq_api_key=api_key or None,
+      )
+    except ImportError:
+      pass
+
+  # 2. Fallback: Google Gemini
   if provider == "gemini":
     try:
       from langchain_google_genai import ChatGoogleGenerativeAI
@@ -53,18 +66,6 @@ def _create_llm():
       )
     except ImportError:
       pass
-
-  # 2. Fallback: Groq (Llama / Mixtral)
-  try:
-    from langchain_groq import ChatGroq
-
-    return ChatGroq(
-        model_name=model_name,
-        temperature=0.1,
-        groq_api_key=api_key or None,
-    )
-  except ImportError:
-    pass
 
   # 3. Offline Test Mock
   from langchain_core.language_models.fake import FakeListLLM
@@ -106,7 +107,7 @@ def get_job_manager() -> JobManager:
 @lru_cache(maxsize=1)
 def get_ingestion_pipeline() -> IngestionPipeline:
   github_token = os.getenv("GITHUB_TOKEN")
-  max_files = int(os.getenv("MAX_REPO_FILES", "150"))
+  max_files = int(os.getenv("MAX_REPO_FILES", "250"))
   return IngestionPipeline(
       github_client=GitHubClient(github_token=github_token),
       sanitizer=Sanitizer(),
@@ -127,13 +128,13 @@ def get_conversational_chain(repo_id: str) -> RepoConversationalChain:
       chunk_repository=chunk_repo,
       embedder=embedder,
       repo_id=repo_id,
-      top_k=5,
+      top_k=3,
   )
 
   keyword_retriever = AtlasKeywordRetriever(
       chunk_repository=chunk_repo,
       repo_id=repo_id,
-      top_k=5,
+      top_k=3,
   )
 
   ensemble_retriever = build_ensemble_retriever(
