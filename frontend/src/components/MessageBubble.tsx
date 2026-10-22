@@ -1,3 +1,5 @@
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { ChatMessage, Citation } from "../api/client";
 import { CitationList } from "./CitationList";
 
@@ -22,14 +24,15 @@ export function MessageBubble({ message, citations }: MessageBubbleProps): JSX.E
           {isUser ? "You" : "RepoMate"}
         </div>
 
-        {/* Render answer text — preserve newlines and code blocks */}
+        {/* Dynamic formatted content: paragraphs, bullet points, tables, code blocks */}
         <div className="message-text">
-          {message.content.split("\n").map((line, index) => (
-            <span key={index}>
-              {line}
-              <br />
-            </span>
-          ))}
+          {isUser ? (
+            message.content
+          ) : (
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {message.content}
+            </ReactMarkdown>
+          )}
         </div>
 
         {/* Citations shown only on assistant messages */}
