@@ -2,7 +2,7 @@
 // /chat is a single request/response call — no EventSource/SSE handling here,
 // matching the backend's synchronous-only /chat contract.
 
-const API_BASE_URL = (import.meta as any).env.VITE_API_URL || "http://127.0.0.1:8000";
+const API_BASE_URL = ((import.meta as any).env?.VITE_API_URL as string) || "http://127.0.0.1:8000";
 
 export interface IndexRequest {
   owner: string;
