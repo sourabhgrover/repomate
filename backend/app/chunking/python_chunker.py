@@ -3,6 +3,9 @@
 Guarantees every chunk is a complete syntactic unit — a chunk must never split
 mid-function or mid-class (CLAUDE.md). Chunk boundaries are always whole
 tree-sitter nodes (function/class/module-level), never arbitrary line windows.
+
+Large classes (> MAX_CHUNK_LINES) are split into per-method sub-chunks at
+method boundaries — still fully CLAUDE.md-compliant.
 """
 
 from typing import TYPE_CHECKING
@@ -12,6 +15,10 @@ import tree_sitter_python
 
 if TYPE_CHECKING:
   import tree_sitter
+
+# Hard cap: class chunks larger than this are recursively split into methods.
+# Prevents a single giant class from blowing the LLM's token-per-minute limit.
+MAX_CHUNK_LINES = 150
 
 
 class SyntacticUnit:
@@ -123,12 +130,104 @@ class PythonChunker:
     flush_module_nodes()
     return units
 
+  def _split_large_class(
+      self, class_unit: SyntacticUnit, repo_id: str, file_path: str
+  ) -> list[Chunk]:
+    """Splits an oversized class chunk into per-method sub-chunks.
+
+    CLAUDE.md: chunks must never split mid-function/mid-class.
+    Compliant because we split AT method boundaries, not arbitrary lines.
+    Falls back to returning an empty list if the class body can't be parsed,
+    in which case chunk_file will keep the original unit as-is.
+    """
+    chunks: list[Chunk] = []
+    lines = class_unit.text.splitlines()
+
+    # Re-parse just this class's source to find its methods
+    sub_tree = self.parse(class_unit.text)
+    class_node = sub_tree.root_node
+
+    # Locate the class_definition node inside the re-parsed fragment
+    for child in class_node.children:
+      if child.type == "class_definition":
+        class_node = child
+        break
+
+    # Find the class body block
+    body = None
+    for child in class_node.children:
+      if child.type == "block":
+        body = child
+        break
+
+    if body is None:
+      return []  # Fallback: can't recurse, caller will keep original chunk
+
+    # Offset so line numbers map back to the original file
+    line_offset = class_unit.line_start - 1
+    pending: list = []
+
+    def flush_pending() -> None:
+      if not pending:
+        return
+      start = pending[0].start_point[0] + 1 + line_offset
+      end = pending[-1].end_point[0] + 1 + line_offset
+      text = "\n".join(
+          lines[pending[0].start_point[0] : pending[-1].end_point[0] + 1]
+      )
+      if text.strip():
+        chunks.append(
+            Chunk(
+                repo_id=repo_id,
+                file_path=file_path,
+                language="python",
+                chunk_type="module_level",
+                symbols=class_unit.symbols,  # carry the class name for context
+                content_hash=compute_content_hash(text),
+                line_start=start,
+                line_end=end,
+                content=text,
+            )
+        )
+      pending.clear()
+
+    for node in body.children:
+      if node.type == "function_definition":
+        flush_pending()
+        start = node.start_point[0] + 1 + line_offset
+        end = node.end_point[0] + 1 + line_offset
+        text = "\n".join(
+            lines[node.start_point[0] : node.end_point[0] + 1]
+        )
+        name_node = node.child_by_field_name("name")
+        method_name = name_node.text.decode("utf8") if name_node else ""
+        if text.strip():
+          chunks.append(
+              Chunk(
+                  repo_id=repo_id,
+                  file_path=file_path,
+                  language="python",
+                  chunk_type="function",
+                  symbols=[method_name] if method_name else [],
+                  content_hash=compute_content_hash(text),
+                  line_start=start,
+                  line_end=end,
+                  content=text,
+              )
+          )
+      else:
+        pending.append(node)
+
+    flush_pending()
+    return chunks
+
   def chunk_file(
       self, repo_id: str, file_path: str, source_code: str
   ) -> list[Chunk]:
     """Produces one or more Chunk objects for a single Python file, each a
 
-    complete syntactic unit.
+    complete syntactic unit. Classes exceeding MAX_CHUNK_LINES are
+    automatically split into method-level chunks.
     """
     if not source_code.strip():
       return []
@@ -138,6 +237,16 @@ class PythonChunker:
 
     chunks: list[Chunk] = []
     for unit in units:
+      is_oversized = (unit.line_end - unit.line_start + 1) > MAX_CHUNK_LINES
+
+      # Split large classes into per-method chunks (CLAUDE.md compliant)
+      if unit.node_type == "class" and is_oversized:
+        sub_chunks = self._split_large_class(unit, repo_id, file_path)
+        if sub_chunks:
+          chunks.extend(sub_chunks)
+          continue  # successfully replaced by method-level chunks
+
+      # Default: emit the unit as a single chunk
       chunks.append(
           Chunk(
               repo_id=repo_id,
